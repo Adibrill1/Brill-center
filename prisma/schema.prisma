@@ -1,0 +1,259 @@
+// Brill Center — Database Schema (PostgreSQL)
+// Bilingual (he/en) fields are stored as explicit *He / *En columns.
+// Dynamic attributes (analog kit configs, audit logs) use JSONB.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  OPERATOR
+  CLIENT
+}
+
+enum Language {
+  HE
+  EN
+}
+
+enum SpaceType {
+  DIGITAL
+  ANALOG
+  HYBRID
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum IdeaStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+}
+
+enum WebhookDirection {
+  INCOMING
+  OUTGOING
+}
+
+// ---------------------------------------------------------------------------
+// Users & Auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  role         Role     @default(CLIENT)
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  languagePref Language @default(HE) @map("language_pref")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  ownedSpaces Space[]    @relation("SpaceOwner")
+  bookings    Booking[]
+  ideas       Idea[]
+  ideaVotes   IdeaVote[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Spaces (digital / analog / hybrid)
+// ---------------------------------------------------------------------------
+
+model Space {
+  id      String    @id @default(uuid())
+  nameHe  String    @map("name_he")
+  nameEn  String    @map("name_en")
+  type    SpaceType
+  ownerId String    @map("owner_id")
+  owner   User      @relation("SpaceOwner", fields: [ownerId], references: [id])
+
+  /// Dynamic attributes: analog kit configuration, Home Assistant entity ids,
+  /// capacity, opening hours, etc.
+  config Json? @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bookings  Booking[]
+  inventory InventoryItem[]
+  ideas     Idea[]
+  treasury  Treasury?
+
+  @@index([ownerId])
+  @@map("spaces")
+}
+
+// ---------------------------------------------------------------------------
+// Bookings & dynamic access codes
+// ---------------------------------------------------------------------------
+
+model Booking {
+  id        String        @id @default(uuid())
+  spaceId   String        @map("space_id")
+  space     Space         @relation(fields: [spaceId], references: [id])
+  userId    String        @map("user_id")
+  user      User          @relation(fields: [userId], references: [id])
+  startTime DateTime      @map("start_time")
+  endTime   DateTime      @map("end_time")
+  status    BookingStatus @default(PENDING)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  accessCode AccessCode?
+
+  @@index([spaceId, startTime])
+  @@index([userId])
+  @@map("bookings")
+}
+
+/// Security: codes are dynamic, temporary and encrypted.
+/// - `codeHash` is an HMAC-SHA256 of the plaintext code (verification only —
+///   the plaintext is never persisted).
+/// - `encryptedCode` is an AES-256-GCM payload used solely to deliver the
+///   code to trusted hardware (Home Assistant bridge).
+/// - Validity is bound to the booking window (± grace minutes) and codes can
+///   be revoked at any time.
+model AccessCode {
+  id            String   @id @default(uuid())
+  bookingId     String   @unique @map("booking_id")
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  codeHash      String   @map("code_hash")
+  encryptedCode String   @map("encrypted_code")
+  validFrom     DateTime @map("valid_from")
+  expiresAt     DateTime @map("expires_at")
+  revoked       Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("access_codes")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (per space, with low-stock thresholds)
+// ---------------------------------------------------------------------------
+
+model InventoryItem {
+  id         String @id @default(uuid())
+  spaceId    String @map("space_id")
+  space      Space  @relation(fields: [spaceId], references: [id])
+  itemNameHe String @map("item_name_he")
+  itemNameEn String @map("item_name_en")
+  quantity   Int    @default(0)
+  /// When quantity <= threshold a low-stock alert is dispatched.
+  threshold  Int    @default(0)
+
+  /// Dynamic attributes: unit, supplier, analog-kit membership, etc.
+  attributes Json? @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([spaceId])
+  @@map("inventory_items")
+}
+
+// ---------------------------------------------------------------------------
+// Ideas (community proposals via the Idea Orchestrator)
+// ---------------------------------------------------------------------------
+
+model Idea {
+  id         String     @id @default(uuid())
+  spaceId    String?    @map("space_id")
+  space      Space?     @relation(fields: [spaceId], references: [id])
+  userId     String     @map("user_id")
+  user       User       @relation(fields: [userId], references: [id])
+  contentHe  String?    @map("content_he")
+  contentEn  String?    @map("content_en")
+  status     IdeaStatus @default(PROPOSED)
+  votesCount Int        @default(0) @map("votes_count")
+
+  /// Structured payload produced by the Idea Orchestrator
+  /// (parsed from its <proposal_data> XML output).
+  proposalData Json? @db.JsonB @map("proposal_data")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  votes IdeaVote[]
+
+  @@index([spaceId, status])
+  @@map("ideas")
+}
+
+model IdeaVote {
+  id        String   @id @default(uuid())
+  ideaId    String   @map("idea_id")
+  idea      Idea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([ideaId, userId])
+  @@map("idea_votes")
+}
+
+// ---------------------------------------------------------------------------
+// Treasury (internal clearing per space, JSONB audit log)
+// ---------------------------------------------------------------------------
+
+model Treasury {
+  id       String  @id @default(uuid())
+  spaceId  String  @unique @map("space_id")
+  space    Space   @relation(fields: [spaceId], references: [id])
+  balance  Decimal @default(0) @db.Decimal(12, 2)
+  currency String  @default("ILS")
+
+  /// Append-only audit log of transactions:
+  /// [{ id, type: "credit"|"debit", amount, balanceAfter, reason, actorId, at }]
+  transactionsJson Json @default("[]") @db.JsonB @map("transactions_json")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("treasuries")
+}
+
+// ---------------------------------------------------------------------------
+// i18n — UI string translations
+// ---------------------------------------------------------------------------
+
+model Translation {
+  key     String @id
+  valueHe String @map("value_he")
+  valueEn String @map("value_en")
+
+  @@map("translations")
+}
+
+// ---------------------------------------------------------------------------
+// Hardware / Home Assistant webhook audit trail
+// ---------------------------------------------------------------------------
+
+model WebhookEvent {
+  id        String           @id @default(uuid())
+  direction WebhookDirection
+  event     String
+  payload   Json             @db.JsonB
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([event, createdAt])
+  @@map("webhook_events")
+}

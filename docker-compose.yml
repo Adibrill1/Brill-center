@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: brill
+      POSTGRES_PASSWORD: brill
+      POSTGRES_DB: brill_center
+    ports:
+      - "5432:5432"
+    volumes:
+      - brill_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brill -d brill_center"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  brill_pgdata:
