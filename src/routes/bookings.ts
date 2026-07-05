@@ -10,6 +10,7 @@ import {
   hashCode,
 } from '../services/accessCodes.js';
 import { dispatchToHardware } from '../services/webhooks.js';
+import { demandLevelForWindow, shouldAutoConfirm } from '../services/scheduling.js';
 
 export const bookingsRouter = Router();
 
@@ -18,6 +19,7 @@ bookingsRouter.use(requireAuth);
 const createSchema = z
   .object({
     spaceId: z.string().uuid(),
+    title: z.string().max(200).optional(),
     startTime: z.coerce.date(),
     endTime: z.coerce.date(),
   })
@@ -53,15 +55,60 @@ bookingsRouter.post('/', async (req, res, next) => {
     });
     if (overlap) throw new ApiError(409, 'booking_overlap', 'booking.overlap');
 
+    // Smart coordination: low-demand slots in auto-confirm spaces skip the
+    // manual approval queue and get their access code immediately.
+    const demandLevel = await demandLevelForWindow(body.spaceId, body.startTime, body.endTime);
+    const autoConfirm = shouldAutoConfirm(space.config, demandLevel);
+
+    if (autoConfirm) {
+      const code = generateCode();
+      const window = codeValidityWindow(body.startTime, body.endTime);
+      const booking = await prisma.booking.create({
+        data: {
+          spaceId: body.spaceId,
+          userId: req.user!.id,
+          title: body.title,
+          startTime: body.startTime,
+          endTime: body.endTime,
+          status: 'CONFIRMED',
+          accessCode: {
+            create: {
+              codeHash: hashCode(code),
+              encryptedCode: encryptCode(code),
+              validFrom: window.validFrom,
+              expiresAt: window.expiresAt,
+            },
+          },
+        },
+        include: { accessCode: { select: { validFrom: true, expiresAt: true } } },
+      });
+      await dispatchToHardware('access_code.created', {
+        bookingId: booking.id,
+        spaceId: booking.spaceId,
+        encryptedCode: encryptCode(code),
+        validFrom: window.validFrom.toISOString(),
+        expiresAt: window.expiresAt.toISOString(),
+      });
+      res.status(201).json({
+        message: req.t('booking.auto_confirmed'),
+        booking,
+        accessCode: code,
+        autoConfirmed: true,
+        demandLevel,
+      });
+      return;
+    }
+
     const booking = await prisma.booking.create({
       data: {
         spaceId: body.spaceId,
         userId: req.user!.id,
+        title: body.title,
         startTime: body.startTime,
         endTime: body.endTime,
       },
     });
-    res.status(201).json({ message: req.t('booking.created'), booking });
+    res.status(201).json({ message: req.t('booking.created'), booking, demandLevel });
   } catch (err) {
     next(err);
   }

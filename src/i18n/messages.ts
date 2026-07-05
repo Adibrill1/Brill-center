@@ -24,6 +24,22 @@ export const messages = {
     he: 'אין לך הרשאה לבצע פעולה זו',
     en: 'You are not allowed to perform this action',
   },
+  'auth.google_signed_in': {
+    he: 'התחברת בהצלחה עם חשבון Google',
+    en: 'Signed in with Google successfully',
+  },
+  'auth.google_not_configured': {
+    he: 'התחברות עם Google אינה מוגדרת בשרת',
+    en: 'Google sign-in is not configured on the server',
+  },
+  'auth.invalid_google_token': {
+    he: 'אסימון ה-Google אינו תקף',
+    en: 'The Google token is invalid',
+  },
+  'auth.password_login_unavailable': {
+    he: 'חשבון זה מחובר דרך Google — התחבר עם Google',
+    en: 'This account uses Google sign-in — please sign in with Google',
+  },
   'common.not_found': {
     he: 'המשאב המבוקש לא נמצא',
     en: 'The requested resource was not found',
@@ -47,6 +63,10 @@ export const messages = {
   'booking.created': {
     he: 'ההזמנה נקלטה וממתינה לאישור',
     en: 'Booking received and pending approval',
+  },
+  'booking.auto_confirmed': {
+    he: 'ההזמנה אושרה אוטומטית (ביקוש נמוך) — קוד גישה זמני נוצר',
+    en: 'Booking auto-confirmed (low demand) — a temporary access code was generated',
   },
   'booking.confirmed': {
     he: 'ההזמנה אושרה — קוד גישה זמני נוצר',
@@ -111,6 +131,10 @@ export const messages = {
   'treasury.insufficient_funds': {
     he: 'אין יתרה מספקת בקופה',
     en: 'Insufficient treasury balance',
+  },
+  'content.generated': {
+    he: 'התוכן נוצר בהצלחה',
+    en: 'Content generated successfully',
   },
   'webhook.invalid_signature': {
     he: 'חתימת ה-Webhook אינה תקינה',

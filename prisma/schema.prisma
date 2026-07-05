@@ -60,7 +60,11 @@ model User {
   role         Role     @default(CLIENT)
   name         String
   email        String   @unique
-  passwordHash String   @map("password_hash")
+  /// Null for users who sign in with Google only.
+  passwordHash String?  @map("password_hash")
+  /// Google account subject (sub) for "Sign in with Google".
+  googleId     String?  @unique @map("google_id")
+  avatarUrl    String?  @map("avatar_url")
   languagePref Language @default(HE) @map("language_pref")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -111,6 +115,8 @@ model Booking {
   space     Space         @relation(fields: [spaceId], references: [id])
   userId    String        @map("user_id")
   user      User          @relation(fields: [userId], references: [id])
+  /// Optional activity title, shown in the public schedule and flyers.
+  title     String?
   startTime DateTime      @map("start_time")
   endTime   DateTime      @map("end_time")
   status    BookingStatus @default(PENDING)
@@ -241,6 +247,33 @@ model Translation {
   valueEn String @map("value_en")
 
   @@map("translations")
+}
+
+// ---------------------------------------------------------------------------
+// AI-generated marketing content (WhatsApp messages, flyers, social posts)
+// ---------------------------------------------------------------------------
+
+enum ContentType {
+  WHATSAPP
+  FLYER
+  SOCIAL
+}
+
+model GeneratedContent {
+  id        String      @id @default(uuid())
+  spaceId   String?     @map("space_id")
+  type      ContentType
+  language  Language
+  title     String
+  /// WhatsApp/social: plain text. Flyer: self-contained HTML document.
+  body      String
+  /// Generation context: source schedule window, model used, prompt params.
+  meta      Json?       @db.JsonB
+  createdBy String      @map("created_by")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([type, createdAt])
+  @@map("generated_content")
 }
 
 // ---------------------------------------------------------------------------

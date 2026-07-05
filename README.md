@@ -1,29 +1,50 @@
-# Brill Center — Backend
+# Brill Center
 
-מערכת לניהול מרחבים קהילתיים חכמים ואנלוגיים · Backend for smart & analog community space management.
+מערכת לניהול מרחבים קהילתיים חכמים ואנלוגיים · Smart & analog community space management.
 
-**Phase 1 (Foundations)**: database schema, API boilerplate, auth & role management — plus the Phase 2/3 primitives the spec depends on (inventory thresholds, treasury clearing, idea workflow, hardware bridge).
+Monorepo layout: the **backend API** lives at the repository root; the **web app** (Next.js) lives in [`web/`](web/).
 
 ## Stack
 
-- **Node.js 20+ / TypeScript (strict, ESM)**
-- **Express** + **Zod** request validation
-- **PostgreSQL** + **Prisma ORM** (JSONB for dynamic attributes)
-- **JWT** auth with role management (`ADMIN` / `OPERATOR` / `CLIENT`)
-- **Vitest** unit tests
+- **Backend**: Node.js 20+ / TypeScript (strict, ESM), Express + Zod, PostgreSQL + Prisma (JSONB for dynamic attributes), JWT auth with roles (`ADMIN` / `OPERATOR` / `CLIENT`), Vitest
+- **Web**: Next.js 15 (App Router) + React 19, full he/en i18n with RTL, custom design system
+- **AI**: Anthropic SDK (`claude-opus-4-8`) for marketing content generation, with a bilingual template fallback when no API key is configured
 
 ## Quick start
 
 ```bash
+# Backend
 npm install
 cp .env.example .env          # fill in real secrets
 docker compose up -d          # local PostgreSQL 16
 npm run db:migrate            # apply migrations
-npm run db:seed               # demo operator/client/space
+npm run db:seed               # demo operator/client/space/schedule
 npm run dev                   # http://localhost:3001
+
+# Web app (second terminal)
+cd web
+npm install
+cp .env.example .env.local
+npm run dev                   # http://localhost:3000
 ```
 
 Seeded logins: `operator@brill.center` / `operator123!` · `client@brill.center` / `client123!`
+
+## Web app
+
+- **Home** — public bilingual schedule feed (upcoming activities + approved community ideas)
+- **Smart booking** — pick a space/date/duration; free slots are ranked by historical demand (quietest first). Low-demand slots in auto-confirm spaces are approved instantly and issue the temporary access code on the spot
+- **Idea gallery** — propose, vote (one vote per user), see statuses
+- **Brill Studio** (operators) — bookings approval, inventory with low-stock alerts, treasury with audit log, idea approval, and the **AI Content Studio** (WhatsApp messages / printable flyers / social posts generated from the real schedule)
+- **Sign in** — email/password or Google (when `GOOGLE_CLIENT_ID` is configured)
+
+## Smart scheduling
+
+`GET /api/schedule/feed` powers the public schedule. `GET /api/schedule/:spaceId/suggestions?date=&durationMinutes=` returns free slots ranked by a demand matrix aggregated from booking history per (weekday, hour). Spaces with `config.autoConfirm: true` skip manual approval for low-demand slots — `POST /api/bookings` then returns the access code immediately.
+
+## AI content generation
+
+`POST /api/content/generate` (operator-only) builds WhatsApp messages, printable A4 flyers (self-contained HTML) or social posts from the real upcoming schedule, in Hebrew or English. With `ANTHROPIC_API_KEY` set, copy is written by Claude (`claude-opus-4-8`); without it, a deterministic bilingual template engine takes over. Everything is stored in `generated_content` for reuse.
 
 ## Bilingual by design (i18n)
 
@@ -49,7 +70,9 @@ Entity content is stored in explicit bilingual columns (`name_he`/`name_en`, `it
 
 | Area | Routes |
 | --- | --- |
-| Auth | `POST /api/auth/register`, `POST /api/auth/login` |
+| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/google` |
+| Schedule | `GET /api/schedule/feed`, `GET /api/schedule/:spaceId/suggestions` |
+| Content | `POST /api/content/generate`*, `GET /api/content`* |
 | Spaces | `GET /api/spaces`, `GET /api/spaces/:id`, `POST /api/spaces`*, `PATCH /api/spaces/:id`* |
 | Bookings | `GET/POST /api/bookings`, `POST /api/bookings/:id/confirm`* (issues access code), `POST /api/bookings/:id/cancel` (revokes code) |
 | Inventory | `GET/POST /api/inventory`, `PATCH /api/inventory/:id`*, `POST /api/inventory/:id/usage` — every usage report checks `threshold` and dispatches a low-stock alert |

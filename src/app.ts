@@ -9,6 +9,8 @@ import { ideasRouter } from './routes/ideas.js';
 import { treasuryRouter } from './routes/treasury.js';
 import { translationsRouter } from './routes/translations.js';
 import { webhooksRouter } from './routes/webhooks.js';
+import { scheduleRouter } from './routes/schedule.js';
+import { contentRouter } from './routes/content.js';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -30,6 +32,19 @@ export function createApp(): express.Express {
       },
     }),
   );
+  // CORS for the web app (Next.js dev server / deployed frontend).
+  const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', webOrigin);
+    res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization, x-brill-signature');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
   app.use(languageMiddleware);
 
   app.get('/health', (_req, res) => {
@@ -44,6 +59,8 @@ export function createApp(): express.Express {
   app.use('/api/treasury', treasuryRouter);
   app.use('/api/translations', translationsRouter);
   app.use('/api/webhooks', webhooksRouter);
+  app.use('/api/schedule', scheduleRouter);
+  app.use('/api/content', contentRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
