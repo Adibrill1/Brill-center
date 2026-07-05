@@ -1,0 +1,42 @@
+databases:
+  - name: brill-center-db
+    plan: free
+    databaseName: brill_center
+    user: brill
+
+services:
+  - type: web
+    name: brill-center-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run db:deploy && npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brill-center-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: ACCESS_CODE_HMAC_SECRET
+        generateValue: true
+      - key: ACCESS_CODE_ENC_KEY
+        sync: false
+      - key: ACCESS_CODE_GRACE_MINUTES
+        value: 15
+      - key: WEB_ORIGIN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: HA_WEBHOOK_URL
+        value: ""
+      - key: HA_WEBHOOK_SECRET
+        generateValue: true
